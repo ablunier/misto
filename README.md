@@ -2,7 +2,7 @@
 
 A Deno CLI tool that crawls websites and generates [Lume](https://lume.land/) static site projects from them. Point it at any URL and get a ready-to-serve Lume project.
 
-Misto is also the Galician word for match — a fire-lighting stick.
+Misto is also the Galician word for match — the fire-lighting stick.
 
 ## Usage
 
