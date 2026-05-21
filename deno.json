@@ -1,0 +1,19 @@
+{
+  "name": "@ablunier/misto",
+  "version": "0.1.0",
+  "exports": {
+    ".": "./misto.ts",
+    "./cli": "./src/cli.ts"
+  },
+  "tasks": {
+    "start": "deno run --allow-net --allow-write --allow-read misto.ts",
+    "dev": "deno run --allow-net --allow-write --allow-read --watch misto.ts"
+  },
+  "imports": {
+    "@cliffy/command": "jsr:@cliffy/command@^1.1.0",
+    "@cliffy/prompt": "jsr:@cliffy/prompt@^1.1.0",
+    "@cliffy/table": "jsr:@cliffy/table@^1.1.0",
+    "@b-fuze/deno-dom": "jsr:@b-fuze/deno-dom@^0.1.56",
+    "@std/assert": "jsr:@std/assert@^1.0.0"
+  }
+}
