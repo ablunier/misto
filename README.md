@@ -9,13 +9,13 @@ Misto is also the Galician word for match — the fire-lighting stick.
 Run directly from JSR:
 
 ```sh
-deno run -A jsr:@ablunier/misto/cli
+deno run -A jsr:@ablunier/misto
 ```
 
 Or install globally:
 
 ```sh
-deno install --allow-net --allow-write --allow-read -n misto jsr:@ablunier/misto/cli
+deno install -A -n misto jsr:@ablunier/misto
 ```
 
 Then run:
