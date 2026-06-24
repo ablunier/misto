@@ -220,7 +220,7 @@ export async function run(): Promise<void> {
       assetSpinner.stop();
 
       const allAssets = [...assetMap.values()];
-      const counts = { css: 0, js: 0, img: 0 };
+      const counts = { css: 0, js: 0, img: 0, font: 0 };
       for (const a of allAssets) {
         counts[a.type]++;
       }
