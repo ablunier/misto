@@ -6,17 +6,65 @@ interface DownloadOptions {
   origin?: string;
 }
 
-async function fetchAsset(url: string): Promise<Uint8Array | null> {
-  try {
-    const resp = await fetch(url, {
-      headers: { "User-Agent": "misto/0.1 (+https://github.com/misto)" },
-      redirect: "follow",
-    });
-    if (!resp.ok) return null;
-    return new Uint8Array(await resp.arrayBuffer());
-  } catch {
-    return null;
+/** Shared regex for matching CSS url() references. */
+const CSS_URL_RE = /url\(\s*(['"]?)([^'")]+)\1\s*\)/g;
+
+/**
+ * Extract all URLs referenced via url() in a CSS string, resolved against
+ * `baseUrl`. Skips data: URIs. Returns absolute URL strings.
+ */
+export function extractCssUrls(css: string, baseUrl: string): string[] {
+  const urls: string[] = [];
+  for (const m of css.matchAll(CSS_URL_RE)) {
+    const raw = m[2].trim();
+    if (!raw || raw.startsWith("data:")) continue;
+    try {
+      urls.push(new URL(raw, baseUrl).toString());
+    } catch {
+      // ignore unresolvable
+    }
   }
+  return urls;
+}
+
+/** Classify a URL as "font" or "img" by its file extension. */
+function cssAssetType(url: string): Extract<AssetUrl["type"], "img" | "font"> {
+  try {
+    const ext = new URL(url).pathname.split(".").pop()?.toLowerCase() ?? "";
+    if (/^(woff2?|ttf|otf|eot)$/.test(ext)) return "font";
+  } catch { /* fall through */ }
+  return "img";
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((r) => setTimeout(r, ms));
+}
+
+async function fetchAsset(url: string): Promise<Uint8Array | null> {
+  const MAX_RETRIES = 3;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const resp = await fetch(url, {
+        headers: { "User-Agent": "misto/0.1 (+https://github.com/misto)" },
+        redirect: "follow",
+      });
+
+      if (resp.status === 429 && attempt < MAX_RETRIES) {
+        await delay(1000 * Math.pow(2, attempt));
+        continue;
+      }
+
+      if (!resp.ok) return null;
+      return new Uint8Array(await resp.arrayBuffer());
+    } catch {
+      if (attempt < MAX_RETRIES) {
+        await delay(1000 * Math.pow(2, attempt));
+        continue;
+      }
+      return null;
+    }
+  }
+  return null;
 }
 
 export function localFilename(url: string, usedNames: Set<string>): string {
@@ -41,7 +89,7 @@ export function localFilename(url: string, usedNames: Set<string>): string {
 }
 
 export function rewriteCssUrls(css: string, cssOriginalUrl: string, manifest: Record<string, string>): string {
-  return css.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/g, (match, quote, rawUrl) => {
+  return css.replace(CSS_URL_RE, (match, quote, rawUrl) => {
     try {
       const resolved = new URL(rawUrl.trim(), cssOriginalUrl).toString();
       const local = manifest[resolved];
@@ -59,17 +107,25 @@ export async function downloadAssets(
   options: DownloadOptions = {},
 ): Promise<AssetManifest> {
   const manifest: Record<string, string> = {};
-  const usedNames: Record<string, Set<string>> = { css: new Set(), js: new Set(), img: new Set() };
+  const usedNames: Record<string, Set<string>> = {
+    css: new Set(),
+    js: new Set(),
+    img: new Set(),
+    font: new Set(),
+  };
+
+  function isSameOrigin(url: string): boolean {
+    if (!options.origin) return true;
+    try {
+      return new URL(url).host === new URL(options.origin).host;
+    } catch {
+      return false;
+    }
+  }
 
   const toFetch = assets.filter((a) => {
     if (options.skipJs && a.type === "js") return false;
-    if (!options.localiseExternal && options.origin) {
-      try {
-        if (new URL(a.original).origin !== options.origin) return false;
-      } catch {
-        return false;
-      }
-    }
+    if (!options.localiseExternal && !isSameOrigin(a.original)) return false;
     return true;
   });
 
@@ -99,6 +155,29 @@ export async function downloadAssets(
     if (asset.type === "css") {
       cssQueue.push({ text: new TextDecoder().decode(data), originalUrl: asset.original, absPath });
     } else {
+      await Deno.writeFile(absPath, data);
+    }
+  }
+
+  // Discover and download assets referenced by url() inside downloaded CSS
+  // (background images, web fonts). Must run before rewriting so new paths
+  // are in the manifest when rewriteCssUrls runs.
+  for (const { text, originalUrl } of cssQueue) {
+    for (const discovered of extractCssUrls(text, originalUrl)) {
+      if (manifest[discovered]) continue; // already planned
+      if (!options.localiseExternal && !isSameOrigin(discovered)) continue;
+      const type = cssAssetType(discovered);
+      const filename = localFilename(discovered, usedNames[type]);
+      const localPath = `/assets/${type}/${filename}`;
+      manifest[discovered] = localPath;
+      const data = await fetchAsset(discovered);
+      if (!data) {
+        failed.push(discovered);
+        continue;
+      }
+      const absPath = `${outputDir}${localPath}`;
+      const dir = absPath.slice(0, absPath.lastIndexOf("/"));
+      await Deno.mkdir(dir, { recursive: true });
       await Deno.writeFile(absPath, data);
     }
   }

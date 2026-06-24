@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { normalizeUrl, parseSitemapLocs } from "./crawler.ts";
+import { normalizeUrl, parseSitemapLocs, titleToSlug } from "./crawler.ts";
 
 // normalizeUrl
 
@@ -68,4 +68,49 @@ Deno.test("parseSitemapLocs: ignores whitespace-only loc elements", () => {
   const xml = `<urlset><url><loc>   </loc></url><url><loc>https://example.com/</loc></url></urlset>`;
   const result = parseSitemapLocs(xml);
   assertEquals(result.urls, ["https://example.com/"]);
+});
+
+// titleToSlug
+
+Deno.test("titleToSlug: lowercases and hyphenates words", () => {
+  assertEquals(titleToSlug("Hello World"), "hello-world");
+});
+
+Deno.test("titleToSlug: strips diacritics", () => {
+  assertEquals(titleToSlug("Héllo Wörld"), "hello-world");
+});
+
+Deno.test("titleToSlug: removes special characters", () => {
+  assertEquals(titleToSlug("My Post #1 & More!"), "my-post-1-more");
+});
+
+Deno.test("titleToSlug: collapses multiple spaces", () => {
+  assertEquals(titleToSlug("  multiple   spaces  "), "multiple-spaces");
+});
+
+Deno.test("titleToSlug: collapses consecutive hyphens", () => {
+  assertEquals(titleToSlug("hello -- world"), "hello-world");
+});
+
+Deno.test("titleToSlug: trims leading and trailing hyphens", () => {
+  assertEquals(titleToSlug("!hello!"), "hello");
+});
+
+Deno.test("titleToSlug: preserves numbers", () => {
+  assertEquals(titleToSlug("Post 123"), "post-123");
+});
+
+Deno.test("titleToSlug: returns 'page' for empty string", () => {
+  assertEquals(titleToSlug(""), "page");
+});
+
+Deno.test("titleToSlug: returns 'page' for all-special-char string", () => {
+  assertEquals(titleToSlug("!!!"), "page");
+});
+
+Deno.test("titleToSlug: truncates very long titles to 100 characters", () => {
+  const long = "word ".repeat(80).trim(); // 399 chars
+  const result = titleToSlug(long);
+  assertEquals(result.length <= 100, true);
+  assertEquals(result.endsWith("-"), false);
 });

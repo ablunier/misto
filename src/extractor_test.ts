@@ -200,3 +200,118 @@ Deno.test("extractBaseLayout: preserves external CSS href", () => {
   const layout = extractBaseLayout(page);
   assertStringIncludes(layout, "https://cdn.example.net/reset.css");
 });
+
+// extractPage — slug passthrough
+
+Deno.test("extractPage: passes slug through from CrawledPage", () => {
+  const page: CrawledPage = {
+    url: "https://example.com/?p=56",
+    title: "Hello World",
+    statusCode: 200,
+    rawHtml: "<html><head><title>Hello World</title></head><body></body></html>",
+    slug: "hello-world",
+  };
+  assertEquals(extractPage(page).slug, "hello-world");
+});
+
+Deno.test("extractPage: slug is undefined when not set on CrawledPage", () => {
+  const page = makePage("<html><head><title>About</title></head><body></body></html>");
+  assertEquals(extractPage(page).slug, undefined);
+});
+
+// Search form action detection (via extractPage)
+
+Deno.test("extractPage: detects GET search form and returns its action URL", () => {
+  const page = makePage(
+    `<html><body><main>
+      <form method="get" action="/search">
+        <input type="search" name="q">
+      </form>
+    </main></body></html>`,
+  );
+  const { searchActions, contentHtml } = extractPage(page);
+  assertEquals(searchActions, ["https://example.com/search"]);
+  // Form remains in the HTML (not replaced)
+  assertStringIncludes(contentHtml, "<form");
+});
+
+Deno.test("extractPage: detects GET search form via text input name", () => {
+  const page = makePage(
+    `<html><body><main>
+      <form method="get" action="/buscar">
+        <input type="text" name="q">
+      </form>
+    </main></body></html>`,
+  );
+  const { searchActions } = extractPage(page);
+  assertEquals(searchActions, ["https://example.com/buscar"]);
+});
+
+Deno.test("extractPage: form with no method defaults to GET", () => {
+  const page = makePage(
+    `<html><body><main>
+      <form action="/search"><input type="search" name="q"></form>
+    </main></body></html>`,
+  );
+  const { searchActions } = extractPage(page);
+  assertEquals(searchActions, ["https://example.com/search"]);
+});
+
+Deno.test("extractPage: does not include POST form actions in searchActions", () => {
+  const page = makePage(
+    `<html><body><main>
+      <form method="post" action="/contact">
+        <input type="text" name="email">
+      </form>
+    </main></body></html>`,
+  );
+  const { searchActions } = extractPage(page);
+  assertEquals(searchActions, []);
+});
+
+Deno.test("extractPage: returns empty searchActions when no search form present", () => {
+  const page = makePage("<html><body><p>No forms</p></body></html>");
+  assertEquals(extractPage(page).searchActions, []);
+});
+
+Deno.test("extractPage: deduplicates identical action URLs", () => {
+  const page = makePage(
+    `<html><body>
+      <form method="get" action="/search"><input type="search" name="q"></form>
+      <form method="get" action="/search"><input type="search" name="q"></form>
+    </body></html>`,
+  );
+  assertEquals(extractPage(page).searchActions?.length, 1);
+});
+
+// Inline style / <style> URL discovery
+
+Deno.test("extractPage: discovers url() in <style> block as img asset", () => {
+  const page = makePage(
+    `<html><head>
+      <style>.logo { background: url(/img/logo.svg); }</style>
+    </head><body></body></html>`,
+  );
+  const assets = extractPage(page).assetUrls;
+  const found = assets.find((a) => a.original === "https://example.com/img/logo.svg");
+  assertEquals(found?.type, "img");
+});
+
+Deno.test("extractPage: discovers url() in inline style attribute as img asset", () => {
+  const page = makePage(
+    `<html><body><h1 style="background-image: url('/img/logo.svg');">Title</h1></body></html>`,
+  );
+  const assets = extractPage(page).assetUrls;
+  const found = assets.find((a) => a.original === "https://example.com/img/logo.svg");
+  assertEquals(found?.type, "img");
+});
+
+Deno.test("extractPage: skips data: URIs in style attributes", () => {
+  const page = makePage(
+    `<html><body><div style="background: url('data:image/png;base64,abc');"></div></body></html>`,
+  );
+  const assets = extractPage(page).assetUrls;
+  const dataAsset = assets.find((a) => a.original.startsWith("data:"));
+  assertEquals(dataAsset, undefined);
+});
+

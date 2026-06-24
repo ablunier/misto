@@ -11,12 +11,11 @@ const { version: VERSION } = JSON.parse(
   await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
 );
 
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const enc = new TextEncoder();
-
 class Spinner {
+  static #frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  #encoder = new TextEncoder();
   #text: string;
-  #timer: number | undefined;
+  #timer: ReturnType<typeof setInterval> | undefined;
   #frame = 0;
 
   constructor(text: string) {
@@ -28,16 +27,18 @@ class Spinner {
   }
 
   start(): this {
+    if (!Deno.stdout.isTerminal()) return this;
     this.#timer = setInterval(() => {
-      const frame = SPINNER_FRAMES[this.#frame++ % SPINNER_FRAMES.length];
-      Deno.stdout.writeSync(enc.encode(`\r  ${frame} ${this.#text}`));
+      const frame = Spinner.#frames[this.#frame++ % Spinner.#frames.length];
+      Deno.stdout.writeSync(this.#encoder.encode(`\r  ${frame} ${this.#text}`));
     }, 80);
     return this;
   }
 
   stop(): void {
+    if (!this.#timer) return;
     clearInterval(this.#timer);
-    Deno.stdout.writeSync(enc.encode("\r" + " ".repeat(80) + "\r"));
+    Deno.stdout.writeSync(this.#encoder.encode("\r" + " ".repeat(80) + "\r"));
   }
 }
 
@@ -64,6 +65,7 @@ type CliOptions = {
   js: boolean;
   sitemap?: true;
   dryRun?: true;
+  yes?: true;
 };
 
 export async function run(): Promise<void> {
@@ -79,6 +81,7 @@ export async function run(): Promise<void> {
     .option("--no-js", "Skip JavaScript asset download")
     .option("--sitemap", "Seed crawl queue from sitemap.xml (checks robots.txt first)")
     .option("--dry-run", "Crawl and list pages without generating files")
+    .option("--yes", "Migrate all pages without prompting")
     .action(async (options: CliOptions) => {
       let rawUrl = options.url;
 
@@ -86,11 +89,13 @@ export async function run(): Promise<void> {
         rawUrl = await Input.prompt({
           message: "Enter the starting URL to crawl",
           hint: "e.g. https://lume.land",
-          validate: (v) => {
-            if (!v.trim()) return "URL is required";
+          validate: (value) => {
+            if (!value.trim()) return "URL is required";
+
             try {
-              const u = /^https?:\/\//i.test(v) ? v : `https://${v}`;
-              new URL(u);
+              const url = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+              new URL(url);
+
               return true;
             } catch {
               return "Please enter a valid URL";
@@ -100,6 +105,7 @@ export async function run(): Promise<void> {
       }
 
       let startUrl: string;
+
       try {
         startUrl = normalizeUrl(rawUrl.trim());
       } catch {
@@ -170,25 +176,30 @@ export async function run(): Promise<void> {
         Deno.exit(0);
       }
 
-      const SELECT_ALL = "__select_all__";
-      const checkboxOptions = [
-        { name: "[ Select all ]", value: SELECT_ALL },
-        ...pages.map((p) => ({
-          name: `${truncate(toPath(p.url, origin), 40)}  ${truncate(p.title || "(no title)", 35)}`,
-          value: p.url,
-        })),
-      ];
+      let selectedPages: typeof pages;
+      if (options.yes) {
+        selectedPages = pages;
+      } else {
+        const SELECT_ALL = "__select_all__";
+        const checkboxOptions = [
+          { name: "[ Select all ]", value: SELECT_ALL },
+          ...pages.map((p) => ({
+            name: `${truncate(toPath(p.url, origin), 40)}  ${truncate(p.title || "(no title)", 35)}`,
+            value: p.url,
+          })),
+        ];
 
-      const selection: string[] = await Checkbox.prompt({
-        message: "Select pages to migrate",
-        options: checkboxOptions,
-        minOptions: 1,
-      });
+        const selection: string[] = await Checkbox.prompt({
+          message: "Select pages to migrate",
+          options: checkboxOptions,
+          minOptions: 1,
+        });
 
-      const selectedUrls = new Set<string>(
-        selection.includes(SELECT_ALL) ? pages.map((p) => p.url) : selection,
-      );
-      const selectedPages = pages.filter((p) => selectedUrls.has(p.url));
+        const selectedUrls = new Set<string>(
+          selection.includes(SELECT_ALL) ? pages.map((p) => p.url) : selection,
+        );
+        selectedPages = pages.filter((p) => selectedUrls.has(p.url));
+      }
 
       console.log(
         `\n${selectedPages.length} page${selectedPages.length === 1 ? "" : "s"} selected.\n`,
@@ -210,7 +221,9 @@ export async function run(): Promise<void> {
 
       const allAssets = [...assetMap.values()];
       const counts = { css: 0, js: 0, img: 0 };
-      for (const a of allAssets) counts[a.type]++;
+      for (const a of allAssets) {
+        counts[a.type]++;
+      }
 
       console.log("Asset inventory:");
       console.log(`  CSS files : ${counts.css}`);
@@ -219,8 +232,8 @@ export async function run(): Promise<void> {
       console.log(`  Total     : ${allAssets.length}`);
 
       // Download assets
-      const dlSpinner = new Spinner(`Downloading ${allAssets.length} asset${allAssets.length === 1 ? "" : "s"}…`);
-      dlSpinner.start();
+      const downloadSpinner = new Spinner(`Downloading ${allAssets.length} asset${allAssets.length === 1 ? "" : "s"}…`);
+      downloadSpinner.start();
 
       const manifest = await downloadAssets(allAssets, options.output, {
         skipJs: options.js === false,
@@ -228,7 +241,7 @@ export async function run(): Promise<void> {
         origin: new URL(startUrl).origin,
       });
 
-      dlSpinner.stop();
+      downloadSpinner.stop();
 
       const downloaded = Object.keys(manifest.map).length;
       console.log(`\nDownloaded ${downloaded} asset${downloaded === 1 ? "" : "s"}.`);
@@ -242,7 +255,7 @@ export async function run(): Promise<void> {
       await generateProject(extractedPages, layout, manifest, {
         outputDir: options.output,
         siteLocation: startUrl,
-      });
+      }, () => genSpinner.stop());
 
       genSpinner.stop();
 
@@ -251,12 +264,15 @@ export async function run(): Promise<void> {
 
       const failedDownloads = manifest.failed;
       const hasErrors = failed.length > 0 || failedDownloads.length > 0;
+
       if (hasErrors) {
         console.log("\n--- Error summary ---");
+        
         if (failed.length > 0) {
           console.log(`\nFailed to crawl (${failed.length}):`);
           for (const u of failed) console.log(`  - ${u}`);
         }
+
         if (failedDownloads.length > 0) {
           console.log(`\nFailed to download (${failedDownloads.length}):`);
           for (const u of failedDownloads) console.log(`  - ${u}`);

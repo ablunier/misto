@@ -1,34 +1,62 @@
 import { DOMParser } from "@b-fuze/deno-dom";
 import type { CrawlOptions, CrawledPage } from "./types.ts";
 
+const VERSION = "0.1.0";
+
 type ParsedDoc = NonNullable<ReturnType<InstanceType<typeof DOMParser>["parseFromString"]>>;
 
 export function normalizeUrl(raw: string): string {
   const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+
   const url = new URL(withScheme);
   url.hostname = url.hostname.toLowerCase();
   url.hash = "";
+
   if (url.pathname !== "/" && url.pathname.endsWith("/")) {
     url.pathname = url.pathname.slice(0, -1);
   }
+
   return url.toString();
 }
 
 function canonicalize(url: URL): string {
   const c = new URL(url.toString());
+
   c.hash = "";
+
   if (c.pathname !== "/" && c.pathname.endsWith("/")) {
     c.pathname = c.pathname.slice(0, -1);
   }
+  
   return c.toString().toLowerCase();
 }
 
-function extractTitle(doc: ParsedDoc): string {
+export function titleToSlug(title: string): string {
   return (
-    doc.querySelector("title")?.textContent?.trim() ||
-    doc.querySelector("h1")?.textContent?.trim() ||
-    ""
+    title
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 100)
+      .replace(/-+$/g, "") || "page"
   );
+}
+
+function extractTitle(doc: ParsedDoc): string {
+  const titleText = doc.querySelector("title")?.textContent?.trim();
+  if (titleText) return titleText;
+  for (const h1 of doc.querySelectorAll("h1")) {
+    const cls = h1.getAttribute("class") ?? "";
+    if (/screen-reader|sr-only|visually-hidden/i.test(cls)) continue;
+    const text = h1.textContent?.trim();
+    if (text) return text;
+  }
+  return "";
 }
 
 function hasNoFollow(doc: ParsedDoc): boolean {
@@ -36,6 +64,8 @@ function hasNoFollow(doc: ParsedDoc): boolean {
     doc.querySelector('meta[name="robots"]')?.getAttribute("content") ?? "";
   return content.toLowerCase().includes("nofollow");
 }
+
+const ASSET_EXTENSIONS = /\.(jpe?g|png|gif|svg|webp|avif|ico|pdf|css|js|woff2?|ttf|eot|mp4|mp3|zip|gz|tar|xml|json)$/i;
 
 function extractLinks(doc: ParsedDoc, base: URL, origin: string): string[] {
   const links: string[] = [];
@@ -46,6 +76,7 @@ function extractLinks(doc: ParsedDoc, base: URL, origin: string): string[] {
       const resolved = new URL(href, base);
       if (!resolved.protocol.startsWith("http")) continue;
       if (resolved.origin.toLowerCase() !== origin) continue;
+      if (ASSET_EXTENSIONS.test(resolved.pathname)) continue;
       resolved.hash = "";
       links.push(resolved.toString());
     } catch {
@@ -60,7 +91,7 @@ async function delay(ms: number): Promise<void> {
 }
 
 async function fetchText(url: string): Promise<string | null> {
-  const headers = { "User-Agent": "misto/0.1 (+https://github.com/ablunier/misto)" };
+  const headers = { "User-Agent": `misto/${VERSION} (+https://github.com/ablunier/misto)` };
   try {
     const resp = await fetch(url, { headers, redirect: "follow" });
     if (!resp.ok) return null;
@@ -145,7 +176,7 @@ const MAX_RETRIES = 3;
 async function fetchPage(
   url: string,
 ): Promise<{ html: string; status: number; finalUrl: string } | null> {
-  const headers = { "User-Agent": "misto/0.1 (+https://github.com/ablunier/misto)" };
+  const headers = { "User-Agent": `misto/${VERSION} (+https://github.com/ablunier/misto)` };
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     // Manually follow redirects so we can enforce the chain limit
@@ -210,6 +241,7 @@ export async function crawl(
   }
   const pages: CrawledPage[] = [];
   const failed: string[] = [];
+  const usedSlugs = new Set<string>();
 
   while (queue.length > 0 && pages.length < options.maxPages) {
     const url = queue.shift()!;
@@ -255,11 +287,25 @@ export async function crawl(
       continue;
     }
 
+    const title = extractTitle(doc);
+    let slug: string | undefined;
+    if (new URL(result.finalUrl).search) {
+      const base = titleToSlug(title);
+      let candidate = base;
+      let counter = 2;
+      while (usedSlugs.has(candidate)) {
+        candidate = `${base}-${counter++}`;
+      }
+      usedSlugs.add(candidate);
+      slug = candidate;
+    }
+
     pages.push({
       url: result.finalUrl,
-      title: extractTitle(doc),
+      title,
       statusCode: result.status,
       rawHtml: result.html,
+      slug,
     });
 
     const base = new URL(result.finalUrl);

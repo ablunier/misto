@@ -1,13 +1,14 @@
 {
   "name": "@ablunier/misto",
   "version": "0.1.0",
+  "license": "MIT",
   "exports": {
     ".": "./misto.ts",
     "./cli": "./src/cli.ts"
   },
   "tasks": {
-    "start": "deno run --allow-net --allow-write --allow-read misto.ts",
-    "dev": "deno run --allow-net --allow-write --allow-read --watch misto.ts"
+    "start": "deno run --allow-net --allow-write --allow-read --allow-run misto.ts",
+    "dev": "deno run --allow-net --allow-write --allow-read --allow-run --watch misto.ts"
   },
   "imports": {
     "@cliffy/command": "jsr:@cliffy/command@^1.1.0",

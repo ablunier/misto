@@ -30,6 +30,27 @@ Deno.test("pageOutputPath: strips trailing slash from page path", () => {
   );
 });
 
+Deno.test("pageOutputPath: query-param root URL with slug maps to slug.vto", () => {
+  assertEquals(
+    pageOutputPath("https://example.com/?p=56", "https://example.com", "hello-world"),
+    "hello-world.vto",
+  );
+});
+
+Deno.test("pageOutputPath: query-param URL with path and slug nests under directory", () => {
+  assertEquals(
+    pageOutputPath("https://example.com/blog/?p=56", "https://example.com", "my-post"),
+    "blog/my-post.vto",
+  );
+});
+
+Deno.test("pageOutputPath: slug without query string still uses slug", () => {
+  assertEquals(
+    pageOutputPath("https://example.com/", "https://example.com", "override"),
+    "override.vto",
+  );
+});
+
 // yamlStr
 
 Deno.test("yamlStr: simple alphanumeric string needs no quotes", () => {
@@ -142,4 +163,31 @@ Deno.test("rewriteInternalLinks: rewrites multiple links in one HTML string", ()
   const html = `<a href="https://example.com/a">A</a><a href="https://example.com/b">B</a>`;
   const result = rewriteInternalLinks(html, "https://example.com");
   assertEquals(result, `<a href="/a">A</a><a href="/b">B</a>`);
+});
+
+Deno.test("rewriteInternalLinks: uses urlPathMap to resolve query-param URL to slug path", () => {
+  const urlPathMap = new Map([["https://example.com/?p=56", "/hello-world/"]]);
+  const html = `<a href="https://example.com/?p=56">Post</a>`;
+  const result = rewriteInternalLinks(html, "https://example.com", urlPathMap);
+  assertEquals(result, `<a href="/hello-world/">Post</a>`);
+});
+
+Deno.test("rewriteInternalLinks: urlPathMap strips fragment before lookup", () => {
+  const urlPathMap = new Map([["https://example.com/?p=56", "/hello-world/"]]);
+  const html = `<a href="https://example.com/?p=56#section">Post</a>`;
+  const result = rewriteInternalLinks(html, "https://example.com", urlPathMap);
+  assertEquals(result, `<a href="/hello-world/">Post</a>`);
+});
+
+Deno.test("rewriteInternalLinks: falls back to pathname for unmapped same-origin URL when map provided", () => {
+  const urlPathMap = new Map([["https://example.com/?p=1", "/post-one/"]]);
+  const html = `<a href="https://example.com/about">About</a>`;
+  const result = rewriteInternalLinks(html, "https://example.com", urlPathMap);
+  assertEquals(result, `<a href="/about">About</a>`);
+});
+
+Deno.test("rewriteInternalLinks: rewrites http:// link when origin uses https://", () => {
+  const html = `<a href="http://example.com/about">About</a>`;
+  const result = rewriteInternalLinks(html, "https://example.com");
+  assertEquals(result, `<a href="/about">About</a>`);
 });

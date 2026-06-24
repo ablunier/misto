@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { localFilename, rewriteCssUrls } from "./downloader.ts";
+import { extractCssUrls, localFilename, rewriteCssUrls } from "./downloader.ts";
 
 // localFilename
 
@@ -95,4 +95,42 @@ Deno.test("rewriteCssUrls: handles data URIs without modifying them", () => {
   const css = `body { background: url("data:image/png;base64,abc123"); }`;
   const result = rewriteCssUrls(css, "https://example.com/css/style.css", manifest);
   assertEquals(result, css);
+});
+
+// extractCssUrls
+
+Deno.test("extractCssUrls: resolves relative url() to absolute URL", () => {
+  const css = `.logo { background: url(../img/logo.svg); }`;
+  const result = extractCssUrls(css, "https://example.com/css/style.css");
+  assertEquals(result, ["https://example.com/img/logo.svg"]);
+});
+
+Deno.test("extractCssUrls: extracts absolute url()", () => {
+  const css = `.bg { background: url(https://example.com/img/bg.png); }`;
+  const result = extractCssUrls(css, "https://example.com/css/style.css");
+  assertEquals(result, ["https://example.com/img/bg.png"]);
+});
+
+Deno.test("extractCssUrls: skips data: URIs", () => {
+  const css = `body { background: url("data:image/png;base64,abc"); }`;
+  const result = extractCssUrls(css, "https://example.com/css/style.css");
+  assertEquals(result, []);
+});
+
+Deno.test("extractCssUrls: extracts multiple url() references", () => {
+  const css = `
+    .a { background: url(../img/logo.svg); }
+    .b { background: url(../img/logo-lg.svg); }
+  `;
+  const result = extractCssUrls(css, "https://example.com/css/style.css");
+  assertEquals(result, [
+    "https://example.com/img/logo.svg",
+    "https://example.com/img/logo-lg.svg",
+  ]);
+});
+
+Deno.test("extractCssUrls: handles quoted url() values", () => {
+  const css = `.a { background: url("../img/logo.svg"); }`;
+  const result = extractCssUrls(css, "https://example.com/css/app.css");
+  assertEquals(result, ["https://example.com/img/logo.svg"]);
 });
