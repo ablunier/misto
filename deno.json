@@ -1,6 +1,6 @@
 {
   "name": "@ablunier/misto",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "exports": {
     ".": "./misto.ts",
@@ -8,7 +8,8 @@
   },
   "tasks": {
     "start": "deno run --allow-net --allow-write --allow-read --allow-run misto.ts",
-    "dev": "deno run --allow-net --allow-write --allow-read --allow-run --watch misto.ts"
+    "dev": "deno run --allow-net --allow-write --allow-read --allow-run --watch misto.ts",
+    "version": "deno run --allow-read --allow-write version-bump.ts"
   },
   "imports": {
     "@cliffy/command": "jsr:@cliffy/command@^1.1.0",

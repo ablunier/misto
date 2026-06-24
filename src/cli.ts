@@ -7,9 +7,7 @@ import { downloadAssets } from "./downloader.ts";
 import { generateProject } from "./generator.ts";
 import type { AssetUrl, CrawlOptions } from "./types.ts";
 
-const { version: VERSION } = JSON.parse(
-  await Deno.readTextFile(new URL("../deno.json", import.meta.url)),
-);
+const VERSION = "0.1.1";
 
 class Spinner {
   static #frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];

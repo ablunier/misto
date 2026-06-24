@@ -6,14 +6,16 @@ Misto is also the Galician word for match — the fire-lighting stick.
 
 ## Usage
 
+Run directly from JSR:
+
 ```sh
-deno run --allow-net --allow-write --allow-read misto.ts [options]
+deno run -A jsr:@ablunier/misto/cli
 ```
 
 Or install globally:
 
 ```sh
-deno install --allow-net --allow-write --allow-read -n misto misto.ts
+deno install --allow-net --allow-write --allow-read -n misto jsr:@ablunier/misto/cli
 ```
 
 Then run:
