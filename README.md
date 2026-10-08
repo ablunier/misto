@@ -1,73 +1,77 @@
 # Misto
 
-A Deno CLI tool that crawls websites and generates [Lume](https://lume.land/) static site projects from them. Point it at any URL and get a ready-to-serve Lume project.
+An [Agent Skill](https://agentskills.io) that migrates an existing website into a
+[Lume](https://lume.land/) static site project.
+
+Every website has its particular things, so the migration is run by an AI agent, not by a fixed
+pipeline. The agent reads the crawled site, works out its templates, asks you what you want
+(which pages, which plugins, what to drop, how the code should be organised) and writes the Lume
+project. The scripts bundled with the skill do the mechanical work for it: crawling, downloading
+assets, rewriting URLs, extracting pages in bulk and checking the result against the original.
 
 Misto is also the Galician word for match — the fire-lighting stick.
 
-## Usage
+## Install
 
-Run directly from JSR:
-
-```sh
-deno run -A jsr:@ablunier/misto
-```
-
-Or install globally:
+The skill is this repository. Put it where your agent looks for skills, in a folder named `misto`:
 
 ```sh
-deno install -A -n misto jsr:@ablunier/misto
+# Claude Code, for your user
+git clone https://github.com/ablunier/misto ~/.claude/skills/misto
+
+# or for one project
+git clone https://github.com/ablunier/misto .claude/skills/misto
 ```
 
-Then run:
+Other agents that support the Agent Skills format use their own skills folder; the layout is the
+same.
+
+Requires [Deno](https://deno.com/) 2+ and internet access.
+
+## Use
+
+Ask your agent:
+
+> Migrate https://example.com to Lume
+
+It will crawl the site, show you what it found, ask a few questions and build the project. Expect
+a conversation, not a one-shot command.
+
+## What is in the skill
+
+```
+SKILL.md              instructions the agent follows
+scripts/              what the agent runs
+├── crawl.ts            site → .misto/ workspace
+├── inspect.ts          hints about templates; outline of a page
+├── download.ts         assets → project, plus the asset manifest
+├── rewrite.ts          URL rewriting for a layout or fragment
+├── extract.ts          rules.json → one page file per crawled page
+├── verify.ts           built site vs the crawl
+└── lib/                shared modules
+references/           read by the agent when needed
+├── lume.md             the Lume features a migration touches
+├── plugins.md          which Lume plugins to offer, and when
+├── rules.md            the rules.json format
+└── pitfalls.md         how crawled sites mislead
+assets/               templates the agent adapts
+```
+
+The scripts also work by hand. Each one documents itself:
 
 ```sh
-misto --url https://example.com
-```
-
-If `--url` is omitted, misto prompts for one interactively.
-
-## How it works
-
-misto runs a linear pipeline:
-
-1. **Crawl** — BFS crawl from the seed URL; respects `robots.txt`, handles redirects, retries, and rate limiting (429 back-off); optionally seeds from `sitemap.xml`
-2. **Extract** — Parses HTML; isolates content via semantic selectors (`<main>`, `[role="main"]`, `<article>`); builds the base Lume layout
-3. **Download** — Fetches CSS, JS, and images; rewrites `url()` references in CSS; deduplicates assets by original URL
-4. **Generate** — Bootstraps a Lume project; writes `_config.ts`, base layout, `_data/site.yaml`, and `.vto` page files with YAML frontmatter
-
-## Generated output
-
-```
-output/
-├── _config.ts
-├── _data/site.yaml
-├── _includes/layouts/base.vto
-├── assets/
-│   ├── css/
-│   ├── js/
-│   └── img/
-└── [pages].vto
-```
-
-After generation:
-
-```sh
-cd output && deno task serve
+deno run --allow-net --allow-read --allow-write scripts/crawl.ts --help
 ```
 
 ## Development
 
 ```sh
-# Run with file watching
-deno task dev
-
-# Run tests
-deno test
+deno task test     # unit tests and an end-to-end run against a local fixture site
+deno task check
 ```
 
-## Requirements
-
-- [Deno](https://deno.land/) v2+
+Scripts declare their dependencies inline (`jsr:` specifiers), so they run from any directory
+without this repository's `deno.json`.
 
 ## License
 

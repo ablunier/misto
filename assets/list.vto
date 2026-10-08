@@ -1,0 +1,24 @@
+---
+layout: layouts/base.vto
+---
+{{# Layout for assets/paginator.page.ts. Copy the list and nav markup from the
+    crawled list page so the original CSS keeps applying; the classes below are
+    placeholders. #}}
+<h1>{{ title }}</h1>
+
+<ul class="posts">
+  {{ for post of results }}
+  <li>
+    <a href="{{ post.url }}">{{ post.title }}</a>
+    {{ if post.description }}<p>{{ post.description }}</p>{{ /if }}
+  </li>
+  {{ /for }}
+</ul>
+
+{{ if pagination.totalPages > 1 }}
+<nav class="pagination">
+  {{ if pagination.previous }}<a href="{{ pagination.previous }}" rel="prev">Newer</a>{{ /if }}
+  <span>{{ pagination.page }} / {{ pagination.totalPages }}</span>
+  {{ if pagination.next }}<a href="{{ pagination.next }}" rel="next">Older</a>{{ /if }}
+</nav>
+{{ /if }}

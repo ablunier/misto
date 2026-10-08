@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { normalizeUrl, parseSitemapLocs, titleToSlug } from "./crawler.ts";
+import { normalizeUrl, parseSitemapLocs, titleToSlug } from "../scripts/lib/crawler.ts";
 
 // normalizeUrl
 
