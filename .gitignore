@@ -1,4 +1,5 @@
-# Output
+# Migration workspaces and generated sites
+.misto/
 output/
 
 # Deno cache

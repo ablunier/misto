@@ -1,0 +1,50 @@
+{
+  "format": "html",
+  "defaults": {
+    "layout": "layouts/base.vto",
+    "remove": ["script", "style", ".share-buttons"]
+  },
+  "urls": {
+    "https://example.com/blog/?page=2": "/blog/2/",
+    "https://example.com/blog/?page=3": "/blog/3/"
+  },
+  "rules": [
+    {
+      "name": "blog-list",
+      "match": "/blog",
+      "skip": true
+    },
+    {
+      "name": "post",
+      "match": "/blog/*",
+      "content": "article.post .entry-content",
+      "layout": "layouts/post.vto",
+      "data": {
+        "title": { "selector": "article.post h1" },
+        "date": { "selector": "article.post time", "attr": "datetime" },
+        "author": { "selector": ".byline .author", "default": "Unknown" },
+        "tags": { "selector": ".post-tags a", "all": true, "default": [] },
+        "cover": { "selector": "article.post img.cover", "attr": "src", "default": null },
+        "type": "post"
+      }
+    },
+    {
+      "name": "legacy-post",
+      "matchUrl": "[?&]p=\\d+",
+      "content": "article.post .entry-content",
+      "layout": "layouts/post.vto",
+      "data": { "type": "post" }
+    },
+    {
+      "name": "home",
+      "pages": ["0001"],
+      "content": "main",
+      "layout": "layouts/home.vto"
+    },
+    {
+      "name": "page",
+      "match": "/**",
+      "content": "main"
+    }
+  ]
+}

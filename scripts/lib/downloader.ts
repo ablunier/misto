@@ -4,6 +4,11 @@ interface DownloadOptions {
   skipJs?: boolean;
   localiseExternal?: boolean;
   origin?: string;
+  /**
+   * Manifest of an earlier run. Its filenames are kept, and an asset whose
+   * file is still on disk is not fetched again.
+   */
+  existing?: Record<string, string>;
 }
 
 /** Shared regex for matching CSS url() references. */
@@ -45,7 +50,7 @@ async function fetchAsset(url: string): Promise<Uint8Array | null> {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const resp = await fetch(url, {
-        headers: { "User-Agent": "misto/0.1 (+https://github.com/misto)" },
+        headers: { "User-Agent": "misto (+https://github.com/ablunier/misto)" },
         redirect: "follow",
       });
 
@@ -101,18 +106,31 @@ export function rewriteCssUrls(css: string, cssOriginalUrl: string, manifest: Re
   });
 }
 
+async function exists(path: string): Promise<boolean> {
+  try {
+    return (await Deno.stat(path)).isFile;
+  } catch {
+    return false;
+  }
+}
+
 export async function downloadAssets(
   assets: AssetUrl[],
   outputDir: string,
   options: DownloadOptions = {},
+  onProgress?: (done: number, total: number) => void,
 ): Promise<AssetManifest> {
-  const manifest: Record<string, string> = {};
+  const manifest: Record<string, string> = { ...options.existing };
   const usedNames: Record<string, Set<string>> = {
     css: new Set(),
     js: new Set(),
     img: new Set(),
     font: new Set(),
   };
+  for (const localPath of Object.values(manifest)) {
+    const [, , type, filename] = localPath.split("/");
+    usedNames[type]?.add(filename);
+  }
 
   function isSameOrigin(url: string): boolean {
     if (!options.origin) return true;
@@ -123,6 +141,20 @@ export async function downloadAssets(
     }
   }
 
+  function plan(url: string, type: AssetUrl["type"]): string {
+    if (!manifest[url]) {
+      manifest[url] = `/assets/${type}/${localFilename(url, usedNames[type])}`;
+    }
+    return manifest[url];
+  }
+
+  async function write(localPath: string, data: Uint8Array | string): Promise<void> {
+    const absPath = `${outputDir}${localPath}`;
+    await Deno.mkdir(absPath.slice(0, absPath.lastIndexOf("/")), { recursive: true });
+    if (typeof data === "string") await Deno.writeTextFile(absPath, data);
+    else await Deno.writeFile(absPath, data);
+  }
+
   const toFetch = assets.filter((a) => {
     if (options.skipJs && a.type === "js") return false;
     if (!options.localiseExternal && !isSameOrigin(a.original)) return false;
@@ -130,32 +162,26 @@ export async function downloadAssets(
   });
 
   // Assign local paths first so CSS rewriting can reference the full manifest
-  const planned: Array<{ asset: AssetUrl; localPath: string }> = [];
-  for (const asset of toFetch) {
-    const filename = localFilename(asset.original, usedNames[asset.type]);
-    const localPath = `/assets/${asset.type}/${filename}`;
-    manifest[asset.original] = localPath;
-    planned.push({ asset, localPath });
-  }
+  const planned = toFetch.map((asset) => ({ asset, localPath: plan(asset.original, asset.type) }));
 
-  const cssQueue: Array<{ text: string; originalUrl: string; absPath: string }> = [];
+  const cssQueue: Array<{ text: string; originalUrl: string; localPath: string }> = [];
   const failed: string[] = [];
+  let done = 0;
 
   for (const { asset, localPath } of planned) {
+    onProgress?.(++done, planned.length);
+    if (await exists(`${outputDir}${localPath}`)) continue;
+
     const data = await fetchAsset(asset.original);
     if (!data) {
       failed.push(asset.original);
       continue;
     }
 
-    const absPath = `${outputDir}${localPath}`;
-    const dir = absPath.slice(0, absPath.lastIndexOf("/"));
-    await Deno.mkdir(dir, { recursive: true });
-
     if (asset.type === "css") {
-      cssQueue.push({ text: new TextDecoder().decode(data), originalUrl: asset.original, absPath });
+      cssQueue.push({ text: new TextDecoder().decode(data), originalUrl: asset.original, localPath });
     } else {
-      await Deno.writeFile(absPath, data);
+      await write(localPath, data);
     }
   }
 
@@ -164,28 +190,27 @@ export async function downloadAssets(
   // are in the manifest when rewriteCssUrls runs.
   for (const { text, originalUrl } of cssQueue) {
     for (const discovered of extractCssUrls(text, originalUrl)) {
-      if (manifest[discovered]) continue; // already planned
       if (!options.localiseExternal && !isSameOrigin(discovered)) continue;
-      const type = cssAssetType(discovered);
-      const filename = localFilename(discovered, usedNames[type]);
-      const localPath = `/assets/${type}/${filename}`;
-      manifest[discovered] = localPath;
+      const known = discovered in manifest;
+      const localPath = plan(discovered, cssAssetType(discovered));
+      if (known && await exists(`${outputDir}${localPath}`)) continue;
+      if (failed.includes(discovered)) continue;
       const data = await fetchAsset(discovered);
       if (!data) {
         failed.push(discovered);
         continue;
       }
-      const absPath = `${outputDir}${localPath}`;
-      const dir = absPath.slice(0, absPath.lastIndexOf("/"));
-      await Deno.mkdir(dir, { recursive: true });
-      await Deno.writeFile(absPath, data);
+      await write(localPath, data);
     }
   }
 
+  // A reference to an asset that never arrived must keep pointing at the
+  // original, not at a local file that does not exist.
+  for (const url of failed) delete manifest[url];
+
   // Write CSS after manifest is complete so url() rewrites are correct
-  for (const { text, originalUrl, absPath } of cssQueue) {
-    const rewritten = rewriteCssUrls(text, originalUrl, manifest);
-    await Deno.writeTextFile(absPath, rewritten);
+  for (const { text, originalUrl, localPath } of cssQueue) {
+    await write(localPath, rewriteCssUrls(text, originalUrl, manifest));
   }
 
   return { map: manifest, failed };

@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { extractCssUrls, localFilename, rewriteCssUrls } from "./downloader.ts";
+import { extractCssUrls, localFilename, rewriteCssUrls } from "../scripts/lib/downloader.ts";
 
 // localFilename
 

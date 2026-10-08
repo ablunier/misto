@@ -1,0 +1,14 @@
+---
+title: Search
+layout: layouts/base.vto
+url: /search/
+---
+{{# A static site cannot answer the original search form's query. This page is
+    the plain fallback: it lists every page. For real search, offer the user
+    the pagefind plugin (https://lume.land/plugins/pagefind/) and point the
+    form's action here. #}}
+<ul class="search-results">
+  {{ for page of search.pages("", "title") }}
+  <li><a href="{{ page.url }}">{{ page.title }}</a></li>
+  {{ /for }}
+</ul>
