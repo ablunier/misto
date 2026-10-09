@@ -13,20 +13,34 @@ Misto is also the Galician word for match — the fire-lighting stick.
 
 ## Install
 
-The skill is this repository. Put it where your agent looks for skills, in a folder named `misto`:
+The skill is this repository. It works with any agent that supports the
+[Agent Skills](https://agentskills.io) format: clone it into a folder named `misto` inside the
+directory where your agent looks for skills.
 
 ```sh
-# Claude Code, for your user
-git clone https://github.com/ablunier/misto ~/.claude/skills/misto
-
-# or for one project
-git clone https://github.com/ablunier/misto .claude/skills/misto
+# Replace <skills-dir> with your agent's skills directory (see below)
+git clone https://github.com/ablunier/misto <skills-dir>/misto
 ```
 
-Other agents that support the Agent Skills format use their own skills folder; the layout is the
-same.
+Each agent has its own skills directory, either per user or per project. Check your agent's
+documentation for the exact path; common ones are:
 
-Requires [Deno](https://deno.com/) 2+ and internet access.
+| Scope   | Typical location                  |
+| ------- | --------------------------------- |
+| User    | `~/.<agent>/skills/misto`         |
+| Project | `<project>/.<agent>/skills/misto` |
+
+Some agents also read the shared `.agents/skills/` convention. If yours does not support skills
+natively, point it at `SKILL.md` as its instructions; the file's relative paths (`scripts/`,
+`references/`, `assets/`) must stay next to it.
+
+To update, run `git pull` inside the folder.
+
+### Requirements
+
+- [Deno](https://deno.com/) 2+
+- Internet access
+- An agent that can run shell commands and read and write files in your project
 
 ## Use
 
